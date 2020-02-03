@@ -58,6 +58,7 @@ func (d *Driver) OpenConnector(dsn string) (*Connector, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return &Connector{
 		params: params,
 		driver: d,
@@ -90,6 +91,21 @@ func NewConnector(dsn string) (*Connector, error) {
 	}
 	return c, nil
 }
+
+// SecurityTokenProvider implementations are called during federated
+// authentication security token login sequences at the point when the
+// security token is required.  The string returned should be the access
+// token to supply to the server, otherwise an error can be returned to
+// indicate why a token is not available.
+type SecurityTokenProvider func(ctx context.Context) (string, error)
+
+// ActiveDirectoryTokenProvider implementations are called during federated
+// authentication login sequences where the server provides a service
+// principal name and security token service endpoint that should be used
+// to obtain the token. Implementations should contact the security token
+// service specified and obtain the appropriate token, or return an error
+// to indicate why a token is not available.
+type ActiveDirectoryTokenProvider func(ctx context.Context, serverSPN, stsURL string) (string, error)
 
 // Connector holds the parsed DSN and is ready to make a new connection
 // at any time.
@@ -126,6 +142,16 @@ type Connector struct {
 	// Dialer sets a custom dialer for all network operations.
 	// If Dialer is not set, normal net dialers are used.
 	Dialer Dialer
+
+	// SecurityTokenProvider sets the implementation that will obtain an
+	// authentication token when using federated authentication with the
+	// security token library.
+	SecurityTokenProvider SecurityTokenProvider
+
+	// ActiveDirectoryTokenProvider sets the implementation that will
+	// obtain a authentication token when using federated authentication
+	// with the ActiveDirectory library.
+	ActiveDirectoryTokenProvider ActiveDirectoryTokenProvider
 }
 
 type Dialer interface {

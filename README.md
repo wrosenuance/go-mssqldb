@@ -54,10 +54,15 @@ Other supported formats are listed below.
   * true - Server certificate is not checked. Default is true if encrypt is not specified. If trust server certificate is true, driver accepts any certificate presented by the server and any host name in that certificate. In this mode, TLS is susceptible to man-in-the-middle attacks. This should be used only for testing.
 * `certificate` - The file that contains the public key certificate of the CA that signed the SQL Server certificate. The specified certificate overrides the go platform specific CA certificates.
 * `hostNameInCertificate` - Specifies the Common Name (CN) in the server certificate. Default value is the server host.
-* `ServerSPN` - The kerberos SPN (Service Principal Name) for the server. Default is MSSQLSvc/host:port.
+* `ServerSPN` - The Kerberos SPN (Service Principal Name) for the server. Default is MSSQLSvc/host:port.
 * `Workstation ID` - The workstation name (default is the host name)
 * `ApplicationIntent` - Can be given the value `ReadOnly` to initiate a read-only connection to an Availability Group listener. The `database` must be specified when connecting with `Application Intent` set to `ReadOnly`. 
-
+* `FedAuth` - The federated authentication scheme to use. See below for additional setup requirements.
+  * `ActiveDirectoryApplication` - authenticates using an Azure Active Directory application client ID and client secret or certificate. Set the `user` to `client-ID@tenant-ID` and the `password` to the client secret. If using client certificates, provide the path to the PKCS#12 file containing the certificate and RSA private key in the `ClientCertPath` parameter, and set the `password` to the value needed to open the PKCS#12 file.
+  * `ActiveDirectoryMSI` - authenticates using the managed service identity (MSI) attached to the VM, or a specific user-assigned identity if a client ID is specified in the `user` field.
+  * `ActiveDirectoryPassword` - authenticates an Azure Active Directory user account in the form `user@domain.com` with a password. This method is not recommended for general use and does not support multi-factor authentication for accounts.
+  * `ActiveDirectoryIntegrated` - configures the connection to request Active Directory Integrated authentication. This method is not fully supported: you must also implement a token provider to obtain the token for the currently logged-in user and supply it in the `ActiveDirectoryTokenProvider` field in the `Connector` as described below.
+  
 ### The connection string can be specified in one of three formats:
 
 
@@ -106,25 +111,68 @@ Other supported formats are listed below.
   * `odbc:server=localhost;user id=sa;password={foo{bar}` // Literal `{`, password is "foo{bar"
   * `odbc:server=localhost;user id=sa;password={foo}}bar}` // Escaped `} with `}}`, password is "foo}bar"
 
-### Azure Active Directory authentication - preview
+### Azure Active Directory authentication
 
-The configuration of functionality might change in the future.
+Azure Active Directory authentication uses temporary authentication tokens to authenticate.
+To have the driver obtain these tokens using the
+[Active Directory Authentication Library for Go](https://github.com/Azure/go-autorest/tree/master/autorest/adal),
+import the Azure AD module in addition to the normal driver module, and configure the
+connection string with a `FedAuth` option and supporting information as described above.
 
-Azure Active Directory (AAD) access tokens are relatively short lived and need to be 
-valid when a new connection is made. Authentication is supported using a callback func that
-provides a fresh and valid token using a connector:
-``` golang
-conn, err := mssql.NewAccessTokenConnector(
-  "Server=test.database.windows.net;Database=testdb",
-  tokenProvider)
-if err != nil {
-	// handle errors in DSN
+```golang
+import (
+  "database/sql"
+  "net/url"
+
+  // Import the Azure AD driver module (also imports the regular driver package)
+  _ "github.com/denisenkom/go-mssqldb/azuread"
+)
+
+func ConnectWithMSI() (*sql.DB, error) {
+  return sql.Open("sqlserver", "sqlserver://azuresql.database.windows.net?database=yourdb&fedauth=ActiveDirectoryMSI")
 }
-db := sql.OpenDB(conn)
 ```
-Where `tokenProvider` is a function that returns a fresh access token or an error. None of these statements
-actually trigger the retrieval of a token, this happens when the first statment is issued and a connection
-is created.
+
+As an alternative, you can select the federated authentication library and Active Directory
+using the connection string parameters, but then implement your own routine for obtaining
+tokens.
+
+```golang
+import (
+  "context"
+  "database/sql"
+  "net/url"
+
+  // Import the driver
+  "github.com/denisenkom/go-mssqldb"
+)
+
+func ConnectWithADToken() (*sql.DB, error) {
+  conn, err := mssql.NewConnector("sqlserver://azuresql.database.windows.net?database=yourdb&fedauth=ActiveDirectoryApplication")
+  if err != nil {
+    // handle errors in DSN
+  }
+
+  conn.SecurityTokenProvider = func(ctx context.Context) (string, error) {
+    return "the token", nil
+  }
+
+  return sql.OpenDB(conn), nil
+}
+
+func ConnectWithADIntegrated() (*sql.DB, error) {
+  conn, err := mssql.NewConnector("sqlserver://azuresq;.database.windows.net?database=yourdb&fedauth=ActiveDirectoryIntegrated")
+  if err != nil {
+    // handle errors in DSN
+  }
+
+  c.ActiveDirectoryTokenProvider = func(ctx context.Context, serverSPN, stsURL string) (string, error) {
+    return "the token", nil
+  }
+
+  return sql.OpenDB(conn), nil
+}
+```
 
 ## Executing Stored Procedures
 

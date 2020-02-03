@@ -6,12 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"strconv"
 	"strings"
 )
 
-//go:generate stringer -type token
+//go:generate go run golang.org/x/tools/cmd/stringer -type token
 
 type token byte
 
@@ -29,6 +30,7 @@ const (
 	tokenNbcRow        token = 210 // 0xd2
 	tokenEnvChange     token = 227 // 0xE3
 	tokenSSPI          token = 237 // 0xED
+	tokenFedAuthInfo   token = 238 // 0xEE
 	tokenDone          token = 253 // 0xFD
 	tokenDoneProc      token = 254
 	tokenDoneInProc    token = 255
@@ -68,6 +70,11 @@ const (
 	envResetConnAck          = 18
 	envStartedInstanceName   = 19
 	envRouting               = 20
+)
+
+const (
+	fedAuthInfoSTSURL = 0x01
+	fedAuthInfoSPN    = 0x02
 )
 
 // COLMETADATA flags
@@ -425,6 +432,78 @@ func parseSSPIMsg(r *tdsBuffer) sspiMsg {
 	return sspiMsg(buf)
 }
 
+type fedAuthInfoStruct struct {
+	STSURL    string
+	ServerSPN string
+}
+
+type fedAuthInfoOpt struct {
+	fedAuthInfoID          byte
+	dataLength, dataOffset uint32
+}
+
+func parseFedAuthInfo(r *tdsBuffer) fedAuthInfoStruct {
+	size := r.uint32()
+
+	var STSURL, SPN string
+	var err error
+
+	// Each fedAuthInfoOpt is one byte to indicate the info ID,
+	// then a four byte offset and a four byte length.
+	count := r.uint32()
+	offset := uint32(4)
+	opts := make([]fedAuthInfoOpt, count)
+
+	for i := uint32(0); i < count; i++ {
+		fedAuthInfoID := r.byte()
+		dataLength := r.uint32()
+		dataOffset := r.uint32()
+		offset += 1 + 4 + 4
+
+		opts[i] = fedAuthInfoOpt{
+			fedAuthInfoID: fedAuthInfoID,
+			dataLength:    dataLength,
+			dataOffset:    dataOffset,
+		}
+	}
+
+	data := make([]byte, size-offset)
+	r.ReadFull(data)
+
+	for i := uint32(0); i < count; i++ {
+		if opts[i].dataOffset < offset {
+			badStreamPanicf("Fed auth info opt stated data offset %d is before data begins in packet at %d",
+				opts[i].dataOffset, offset)
+			// returns via panic
+		}
+
+		if opts[i].dataOffset+opts[i].dataLength > size {
+			badStreamPanicf("Fed auth info opt stated data length %d added to stated offset exceeds size of packet %d",
+				opts[i].dataOffset+opts[i].dataLength, size)
+			// returns via panic
+		}
+
+		optData := data[opts[i].dataOffset-offset : opts[i].dataOffset-offset+opts[i].dataLength]
+		switch opts[i].fedAuthInfoID {
+		case fedAuthInfoSTSURL:
+			STSURL, err = ucs22str(optData)
+		case fedAuthInfoSPN:
+			SPN, err = ucs22str(optData)
+		default:
+			err = fmt.Errorf("Unexpected fed auth info opt ID %d", int(opts[i].fedAuthInfoID))
+		}
+
+		if err != nil {
+			badStreamPanic(err)
+		}
+	}
+
+	return fedAuthInfoStruct{
+		STSURL:    STSURL,
+		ServerSPN: SPN,
+	}
+}
+
 type loginAckStruct struct {
 	Interface  uint8
 	TDSVersion uint32
@@ -449,19 +528,43 @@ func parseLoginAck(r *tdsBuffer) loginAckStruct {
 }
 
 // https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/2eb82f8e-11f0-46dc-b42d-27302fa4701a
-func parseFeatureExtAck(r *tdsBuffer) {
-	// at most 1 featureAck per feature in featureExt
-	// go-mssqldb will add at most 1 feature, the spec defines 7 different features
-	for i := 0; i < 8; i++ {
-		featureID := r.byte() // FeatureID
-		if featureID == 0xff {
-			return
+type fedAuthAckStruct struct {
+	Nonce     []byte
+	Signature []byte
+}
+
+func parseFeatureExtAck(r *tdsBuffer) map[byte]interface{} {
+	ack := map[byte]interface{}{}
+
+	for feature := r.byte(); feature != featExtTERMINATOR; feature = r.byte() {
+		length := r.uint32()
+
+		switch feature {
+		case featExtFEDAUTH:
+			// In theory we need to know the federated authentication library to
+			// know how to parse, but the alternatives provide compatible structures.
+			fedAuthAck := fedAuthAckStruct{}
+			if length >= 32 {
+				fedAuthAck.Nonce = make([]byte, 0, 32)
+				r.ReadFull(fedAuthAck.Nonce)
+				length -= 32
+			}
+			if length >= 32 {
+				fedAuthAck.Signature = make([]byte, 0, 32)
+				r.ReadFull(fedAuthAck.Signature)
+				length -= 32
+			}
+			ack[feature] = fedAuthAck
+
 		}
-		size := r.uint32() // FeatureAckDataLen
-		d := make([]byte, size)
-		r.ReadFull(d)
+
+		// Skip unprocessed bytes
+		if length > 0 {
+			io.CopyN(ioutil.Discard, r, int64(length))
+		}
 	}
-	panic("parsed more than 7 featureAck's, protocol implementation error?")
+
+	return ack
 }
 
 // http://msdn.microsoft.com/en-us/library/dd357363.aspx
@@ -588,6 +691,9 @@ func processSingleResponse(sess *tdsSession, ch chan tokenStruct, outs map[strin
 		case tokenSSPI:
 			ch <- parseSSPIMsg(sess.buf)
 			return
+		case tokenFedAuthInfo:
+			ch <- parseFedAuthInfo(sess.buf)
+			return
 		case tokenReturnStatus:
 			returnStatus := parseReturnStatus(sess.buf)
 			ch <- returnStatus
@@ -595,7 +701,8 @@ func processSingleResponse(sess *tdsSession, ch chan tokenStruct, outs map[strin
 			loginAck := parseLoginAck(sess.buf)
 			ch <- loginAck
 		case tokenFeatureExtAck:
-			parseFeatureExtAck(sess.buf)
+			featureExtAck := parseFeatureExtAck(sess.buf)
+			ch <- featureExtAck
 		case tokenOrder:
 			order := parseOrder(sess.buf)
 			ch <- order
