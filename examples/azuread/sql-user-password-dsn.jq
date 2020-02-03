@@ -1,0 +1,1 @@
+@uri "sqlserver://\(.sql_admin_user.value):\(.sql_admin_password.value)@\(.sql_server_fqdn.value)?database=\(.sql_database_name.value)&encrypt=true"

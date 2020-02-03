@@ -148,7 +148,7 @@ azureuser@azure-vm:go-mssqldb$ jq -r -f examples/azuread/ad-user-assigned-id-dsn
 Now that your environment is configured, you can run `go test`:
 
 ```console
-azureuser@azure-vm:go-mssqldb$ export SQLSERVER_DSN="$(jq -r -f examples/azuread/ad-system-assigned-id-dsn.jq ../settings.json)"
+azureuser@azure-vm:go-mssqldb$ export SQLSERVER_DSN="$(jq -r -f examples/azuread/sql-user-password-dsn.jq ../settings.json)"
 azureuser@azure-vm:go-mssqldb$ go test -coverprofile=coverage.out ./...
 ```
 
