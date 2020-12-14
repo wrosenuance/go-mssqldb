@@ -211,6 +211,10 @@ func TestConnect(t *testing.T) {
 
 func TestConnectViaIp(t *testing.T) {
 	params := testConnParams(t)
+	if params.encrypt {
+		t.Skip("Unable to test connection to IP for servers that expect encryption")
+	}
+	
 	ips, err := net.LookupIP(params.host)
 	if err != nil {
 		t.Fatal("Unable to lookup IP", err)
