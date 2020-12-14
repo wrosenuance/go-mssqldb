@@ -12,8 +12,10 @@ environment:
   SQLPASSWORD: Password12!
   DATABASE: test
   GOVERSION: 113
+  ADALSUPPORT: test
   matrix:
     - GOVERSION: 18
+      ADALSUPPORT: no-test
       SQLINSTANCE: SQL2017
     - GOVERSION: 19
       SQLINSTANCE: SQL2017
@@ -47,7 +49,7 @@ install:
   - go env
   - go get -u github.com/golang-sql/civil
   - go get -u golang.org/x/crypto/pkcs12
-  - go get -u github.com/Azure/go-autorest/autorest/adal
+  - if %ADALSUPPORT%==test go get -u github.com/Azure/go-autorest/autorest/adal
 
 build_script:
   - go build
