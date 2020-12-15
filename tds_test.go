@@ -19,6 +19,27 @@ func (t *MockTransport) Close() error {
 	return nil
 }
 
+func TestConstantsDefined(t *testing.T) {
+	// This test is just here to avoid complaints about unused code.
+	// These constants are part of the spec but not yet used.
+	for _, b := range []byte{
+		featExtSESSIONRECOVERY, featExtCOLUMNENCRYPTION, featExtGLOBALTRANSACTIONS,
+		featExtAZURESQLSUPPORT, featExtDATACLASSIFICATION, featExtUTF8SUPPORT,
+	} {
+		if b == 0 {
+			t.Fail()
+		}
+	}
+
+	for _, i := range []int{
+		fedAuthLibraryLiveIDCompactToken, fChangePassword, fSendYukonBinaryXML,
+	} {
+		if i < 0 {
+			t.Fail()
+		}
+	}
+}
+
 func TestSendLogin(t *testing.T) {
 	memBuf := new(MockTransport)
 	buf := newTdsBuffer(1024, memBuf)
@@ -218,7 +239,7 @@ func TestConnectViaIp(t *testing.T) {
 	if params.encrypt {
 		t.Skip("Unable to test connection to IP for servers that expect encryption")
 	}
-	
+
 	ips, err := net.LookupIP(params.host)
 	if err != nil {
 		t.Fatal("Unable to lookup IP", err)
