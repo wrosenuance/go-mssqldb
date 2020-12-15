@@ -1240,12 +1240,12 @@ initiate_connection:
 					case loginAckStruct:
 						sess.loginAck = token
 						pending = false
-					/*case error:
-					return nil, fmt.Errorf("login error: %s", token.Error())*/
 					case doneStruct:
 						if token.isError() {
 							return nil, fmt.Errorf("login error: %s", token.getError())
 						}
+					case error:
+						return nil, fmt.Errorf("login error: %s", token.Error())
 					}
 				}
 			} else {
