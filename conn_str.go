@@ -1,6 +1,7 @@
 package mssql
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -38,6 +39,7 @@ type connectParams struct {
 	failOverPort              uint64
 	packetSize                uint16
 	fedAuthAccessToken        string
+	tlsKeyLogFile             string
 }
 
 // default packet size for TDS buffer
@@ -232,6 +234,11 @@ func parseConnectParams(dsn string) (connectParams, error) {
 		}
 	}
 
+	p.tlsKeyLogFile, ok = params["tls key log file"]
+	if ok && p.tlsKeyLogFile != "" && p.disableEncryption {
+		return p, errors.New("Cannot set tlsKeyLogFile when encryption is disabled")
+	}
+
 	return p, nil
 }
 
@@ -247,8 +254,8 @@ func (p connectParams) toUrl() *url.URL {
 	}
 	res := url.URL{
 		Scheme: "sqlserver",
-		Host: p.host,
-		User: url.UserPassword(p.user, p.password),
+		Host:   p.host,
+		User:   url.UserPassword(p.user, p.password),
 	}
 	if p.instance != "" {
 		res.Path = p.instance
