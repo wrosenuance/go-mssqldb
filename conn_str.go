@@ -13,31 +13,43 @@ import (
 
 const defaultServerPort = 1433
 
+const (
+	fedAuthActiveDirectoryPassword    = "ActiveDirectoryPassword"
+	fedAuthActiveDirectoryIntegrated  = "ActiveDirectoryIntegrated"
+	fedAuthActiveDirectoryMSI         = "ActiveDirectoryMSI"
+	fedAuthActiveDirectoryApplication = "ActiveDirectoryApplication"
+)
+
 type connectParams struct {
-	logFlags                  uint64
-	port                      uint64
-	host                      string
-	instance                  string
-	database                  string
-	user                      string
-	password                  string
-	dial_timeout              time.Duration
-	conn_timeout              time.Duration
-	keepAlive                 time.Duration
-	encrypt                   bool
-	disableEncryption         bool
-	trustServerCertificate    bool
-	certificate               string
-	hostInCertificate         string
-	hostInCertificateProvided bool
-	serverSPN                 string
-	workstation               string
-	appname                   string
-	typeFlags                 uint8
-	failOverPartner           string
-	failOverPort              uint64
-	packetSize                uint16
-	fedAuthAccessToken        string
+	logFlags                     uint64
+	port                         uint64
+	host                         string
+	instance                     string
+	database                     string
+	user                         string
+	password                     string
+	dial_timeout                 time.Duration
+	conn_timeout                 time.Duration
+	keepAlive                    time.Duration
+	encrypt                      bool
+	disableEncryption            bool
+	trustServerCertificate       bool
+	certificate                  string
+	hostInCertificate            string
+	hostInCertificateProvided    bool
+	serverSPN                    string
+	workstation                  string
+	appname                      string
+	typeFlags                    uint8
+	failOverPartner              string
+	failOverPort                 uint64
+	packetSize                   uint16
+	fedAuthLibrary               byte
+	fedAuthADALWorkflow          byte
+	aadTenantID                  string
+	aadClientCertPath            string
+	securityTokenProvider        SecurityTokenProvider
+	activeDirectoryTokenProvider ActiveDirectoryTokenProvider
 }
 
 // default packet size for TDS buffer
@@ -232,6 +244,49 @@ func parseConnectParams(dsn string) (connectParams, error) {
 		}
 	}
 
+	p.fedAuthLibrary = fedAuthLibraryReserved
+	fedAuth, ok := params["fedauth"]
+	if ok {
+		switch {
+		case strings.EqualFold(fedAuth, fedAuthActiveDirectoryPassword):
+			p.fedAuthLibrary = fedAuthLibraryADAL
+			p.fedAuthADALWorkflow = fedAuthADALWorkflowPassword
+		case strings.EqualFold(fedAuth, fedAuthActiveDirectoryIntegrated):
+			// Active Directory Integrated authentication is not fully supported:
+			// you can only use this by also implementing an a token provider
+			// and supplying it via ActiveDirectoryTokenProvider in the Connection.
+			p.fedAuthLibrary = fedAuthLibraryADAL
+			p.fedAuthADALWorkflow = fedAuthADALWorkflowIntegrated
+		case strings.EqualFold(fedAuth, fedAuthActiveDirectoryMSI):
+			// When using MSI, to request a specific client ID or user-assigned identity,
+			// provide the ID as the username.
+			p.fedAuthLibrary = fedAuthLibraryADAL
+			p.fedAuthADALWorkflow = fedAuthADALWorkflowMSI
+		case strings.EqualFold(fedAuth, fedAuthActiveDirectoryApplication):
+			p.fedAuthLibrary = fedAuthLibrarySecurityToken
+			p.aadClientCertPath = params["clientcertpath"]
+
+			// Split the user name into client id and tenant id at the @ symbol
+			at := strings.IndexRune(p.user, '@')
+			if at < 1 || at >= (len(p.user)-1) {
+				f := "Expecting user id to be clientID@tenantID: found '%s'"
+				return p, fmt.Errorf(f, p.user)
+			}
+
+			p.aadTenantID = p.user[at+1:]
+			p.user = p.user[0:at]
+		default:
+			f := "Invalid federated authentication type '%s': expected %s, %s or %s"
+			return p, fmt.Errorf(f, fedAuth, fedAuthActiveDirectoryPassword, fedAuthActiveDirectoryMSI,
+				fedAuthActiveDirectoryIntegrated, fedAuthActiveDirectoryApplication)
+		}
+
+		if p.disableEncryption {
+			f := "Encryption must not be disabled for federated authentication: encrypt='%s'"
+			return p, fmt.Errorf(f, encrypt)
+		}
+	}
+
 	return p, nil
 }
 
@@ -247,8 +302,8 @@ func (p connectParams) toUrl() *url.URL {
 	}
 	res := url.URL{
 		Scheme: "sqlserver",
-		Host: p.host,
-		User: url.UserPassword(p.user, p.password),
+		Host:   p.host,
+		User:   url.UserPassword(p.user, p.password),
 	}
 	if p.instance != "" {
 		res.Path = p.instance

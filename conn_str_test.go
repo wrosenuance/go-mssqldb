@@ -34,6 +34,15 @@ func TestInvalidConnectionString(t *testing.T) {
 		// URL mode
 		"sqlserver://\x00",
 		"sqlserver://host?key=value1&key=value2", // duplicate keys
+
+		// cannot use federated authentication when encryption is disabled
+		"encrypt=disable;fedauth=ActiveDirectoryMSI",
+
+		// cannot use unknown federated authentication schemes
+		"encrypt=disable;fedauth=GithubAuth",
+
+		// have to supply username as service-principal-id@tenant-id
+		"fedauth=ActiveDirectoryApplication",
 	}
 	for _, connStr := range connStrings {
 		_, err := parseConnectParams(connStr)
@@ -67,6 +76,18 @@ func TestValidConnectionString(t *testing.T) {
 		{"trustservercertificate=false", func(p connectParams) bool { return !p.trustServerCertificate }},
 		{"certificate=abc", func(p connectParams) bool { return p.certificate == "abc" }},
 		{"hostnameincertificate=abc", func(p connectParams) bool { return p.hostInCertificate == "abc" }},
+		{"fedauth=ActiveDirectoryPassword", func(p connectParams) bool {
+			return p.fedAuthLibrary == fedAuthLibraryADAL && p.fedAuthADALWorkflow == fedAuthADALWorkflowPassword
+		}},
+		{"fedauth=ActiveDirectoryIntegrated", func(p connectParams) bool {
+			return p.fedAuthLibrary == fedAuthLibraryADAL && p.fedAuthADALWorkflow == fedAuthADALWorkflowIntegrated
+		}},
+		{"fedauth=ActiveDirectoryMSI", func(p connectParams) bool {
+			return p.fedAuthLibrary == fedAuthLibraryADAL && p.fedAuthADALWorkflow == fedAuthADALWorkflowMSI
+		}},
+		{"fedauth=ActiveDirectoryApplication;user id=service-principal-id@tenant-id", func(p connectParams) bool {
+			return p.fedAuthLibrary == fedAuthLibrarySecurityToken && p.aadClientCertPath == "" && p.user == "service-principal-id" && p.aadTenantID == "tenant-id"
+		}},
 		{"connection timeout=3;dial timeout=4;keepalive=5", func(p connectParams) bool {
 			return p.conn_timeout == 3*time.Second && p.dial_timeout == 4*time.Second && p.keepAlive == 5*time.Second
 		}},
@@ -186,10 +207,10 @@ func testConnParams(t testing.TB) connectParams {
 	}
 	if len(os.Getenv("HOST")) > 0 && len(os.Getenv("DATABASE")) > 0 {
 		return connectParams{
-			host: os.Getenv("HOST"),
+			host:     os.Getenv("HOST"),
 			instance: os.Getenv("INSTANCE"),
 			database: os.Getenv("DATABASE"),
-			user: os.Getenv("SQLUSER"),
+			user:     os.Getenv("SQLUSER"),
 			password: os.Getenv("SQLPASSWORD"),
 			logFlags: logFlags,
 		}
