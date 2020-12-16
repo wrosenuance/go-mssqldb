@@ -1,6 +1,7 @@
 package mssql
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -50,6 +51,7 @@ type connectParams struct {
 	aadClientCertPath            string
 	securityTokenProvider        SecurityTokenProvider
 	activeDirectoryTokenProvider ActiveDirectoryTokenProvider
+	tlsKeyLogFile                string
 }
 
 // default packet size for TDS buffer
@@ -285,6 +287,11 @@ func parseConnectParams(dsn string) (connectParams, error) {
 			f := "Encryption must not be disabled for federated authentication: encrypt='%s'"
 			return p, fmt.Errorf(f, encrypt)
 		}
+	}
+
+	p.tlsKeyLogFile, ok = params["tls key log file"]
+	if ok && p.tlsKeyLogFile != "" && p.disableEncryption {
+		return p, errors.New("Cannot set tlsKeyLogFile when encryption is disabled")
 	}
 
 	return p, nil

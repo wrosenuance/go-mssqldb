@@ -35,6 +35,9 @@ func TestInvalidConnectionString(t *testing.T) {
 		"sqlserver://\x00",
 		"sqlserver://host?key=value1&key=value2", // duplicate keys
 
+		// cannot set tls log key file when encryption is disabled
+		"encrypt=disable;tls key log file=tls.log",
+
 		// cannot use federated authentication when encryption is disabled
 		"encrypt=disable;fedauth=ActiveDirectoryMSI",
 
@@ -76,6 +79,7 @@ func TestValidConnectionString(t *testing.T) {
 		{"trustservercertificate=false", func(p connectParams) bool { return !p.trustServerCertificate }},
 		{"certificate=abc", func(p connectParams) bool { return p.certificate == "abc" }},
 		{"hostnameincertificate=abc", func(p connectParams) bool { return p.hostInCertificate == "abc" }},
+		{"tls key log file=tls.log", func(p connectParams) bool { return p.tlsKeyLogFile == "tls.log" }},
 		{"fedauth=ActiveDirectoryPassword", func(p connectParams) bool {
 			return p.fedAuthLibrary == fedAuthLibraryADAL && p.fedAuthADALWorkflow == fedAuthADALWorkflowPassword
 		}},
