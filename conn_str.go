@@ -38,8 +38,9 @@ type connectParams struct {
 	failOverPartner           string
 	failOverPort              uint64
 	packetSize                uint16
-	fedAuthAccessToken        string
 	tlsKeyLogFile             string
+	fedAuthWorkflow           string
+	aadClientCertPath         string
 }
 
 // default packet size for TDS buffer
@@ -238,6 +239,13 @@ func parseConnectParams(dsn string) (connectParams, error) {
 	if ok && p.tlsKeyLogFile != "" && p.disableEncryption {
 		return p, errors.New("Cannot set tlsKeyLogFile when encryption is disabled")
 	}
+
+	p.fedAuthWorkflow, ok = params["fedauth"]
+	if ok && p.disableEncryption {
+		f := "Encryption must not be disabled for federated authentication: encrypt='%s'"
+		return p, fmt.Errorf(f, encrypt)
+	}
+	p.aadClientCertPath, _ = params["clientcertpath"]
 
 	return p, nil
 }

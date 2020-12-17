@@ -34,6 +34,9 @@ func TestInvalidConnectionString(t *testing.T) {
 		// URL mode
 		"sqlserver://\x00",
 		"sqlserver://host?key=value1&key=value2", // duplicate keys
+
+		// cannot use federated authentication when encryption is disabled
+		"encrypt=disable;fedauth=ActiveDirectoryMSI",
 	}
 	for _, connStr := range connStrings {
 		_, err := parseConnectParams(connStr)
@@ -78,6 +81,10 @@ func TestValidConnectionString(t *testing.T) {
 		{"log=64;packet size=300", func(p connectParams) bool { return p.logFlags == 64 && p.packetSize == 512 }},
 		{"log=64;packet size=8192", func(p connectParams) bool { return p.logFlags == 64 && p.packetSize == 8192 }},
 		{"log=64;packet size=48000", func(p connectParams) bool { return p.logFlags == 64 && p.packetSize == 32767 }},
+
+		// federated authentication workflow
+		{"fedauth=ActiveDirectoryPassword", func(p connectParams) bool { return p.fedAuthWorkflow == "ActiveDirectoryPassword" }},
+		{"clientcertpath=client.pem", func(p connectParams) bool { return p.aadClientCertPath == "client.pem" }},
 
 		// those are supported currently, but maybe should not be
 		{"someparam", func(p connectParams) bool { return true }},

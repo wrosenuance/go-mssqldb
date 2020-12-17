@@ -58,6 +58,7 @@ func (d *Driver) OpenConnector(dsn string) (*Connector, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return &Connector{
 		params: params,
 		driver: d,
@@ -126,6 +127,10 @@ type Connector struct {
 	// Dialer sets a custom dialer for all network operations.
 	// If Dialer is not set, normal net dialers are used.
 	Dialer Dialer
+
+	// FederatedAuthenticationProvider handles choosing the parameters
+	// and obtaining tokens for federated authentication login scenarios.
+	FederatedAuthenticationProvider FederatedAuthenticationProvider
 }
 
 type Dialer interface {
@@ -148,7 +153,7 @@ type Conn struct {
 	processQueryText bool
 	connectionGood   bool
 
-	outs         map[string]interface{}
+	outs map[string]interface{}
 }
 
 func (c *Conn) checkBadConn(err error) error {
@@ -653,9 +658,9 @@ func (s *Stmt) processExec(ctx context.Context) (res driver.Result, err error) {
 }
 
 type Rows struct {
-	stmt    *Stmt
-	cols    []columnStruct
-	reader  *tokenProcessor
+	stmt     *Stmt
+	cols     []columnStruct
+	reader   *tokenProcessor
 	nextCols []columnStruct
 
 	cancel func()
@@ -669,7 +674,7 @@ func (rc *Rows) Close() error {
 	for {
 		tok, err := rc.reader.nextToken()
 		if err == nil {
-			if  tok == nil {
+			if tok == nil {
 				return nil
 			} else {
 				// continue consuming tokens
