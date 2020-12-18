@@ -21,7 +21,7 @@ func NewAccessTokenConnector(dsn string, tokenProvider func() (string, error)) (
 		return nil, err
 	}
 
-	conn.params.fedAuthLibrary = fedAuthLibrarySecurityToken
+	conn.fedAuthLibrary = fedAuthLibrarySecurityToken
 	conn.securityTokenProvider = func(ctx context.Context) (string, error) {
 		return tokenProvider()
 	}

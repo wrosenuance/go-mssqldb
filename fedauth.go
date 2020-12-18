@@ -49,7 +49,7 @@ func newSecurityTokenConnector(dsn string, tokenProvider func(ctx context.Contex
 		return nil, err
 	}
 
-	conn.params.fedAuthLibrary = fedAuthLibrarySecurityToken
+	conn.fedAuthLibrary = fedAuthLibrarySecurityToken
 	conn.securityTokenProvider = tokenProvider
 
 	return conn, nil
@@ -74,8 +74,8 @@ func newActiveDirectoryTokenConnector(dsn string, adalWorkflow byte, tokenProvid
 		return nil, err
 	}
 
-	conn.params.fedAuthLibrary = fedAuthLibraryADAL
-	conn.params.fedAuthADALWorkflow = adalWorkflow
+	conn.fedAuthLibrary = fedAuthLibraryADAL
+	conn.fedAuthADALWorkflow = adalWorkflow
 	conn.adalTokenProvider = tokenProvider
 
 	return conn, nil
