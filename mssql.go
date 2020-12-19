@@ -115,6 +115,7 @@ type Connector struct {
 	params msdsn.Config
 	driver *Driver
 
+	fedAuthRequired     bool
 	fedAuthLibrary      int
 	fedAuthADALWorkflow byte
 

@@ -1106,13 +1106,13 @@ initiate_connection:
 		logFlags: uint64(p.LogFlags),
 	}
 
-	fedAuthLbrary := c.fedAuthLibrary
-	if fedAuthLbrary == 0 {
-		fedAuthLbrary = fedAuthLibraryReserved
-	}
 	fedAuth := &featureExtFedAuth{
-		FedAuthLibrary: fedAuthLbrary,
-		ADALWorkflow:   c.fedAuthADALWorkflow,
+		FedAuthLibrary: fedAuthLibraryReserved,
+	}
+
+	if c.fedAuthRequired {
+		fedAuth.FedAuthLibrary = c.fedAuthLibrary
+		fedAuth.ADALWorkflow = c.fedAuthADALWorkflow
 	}
 
 	fields := preparePreloginFields(p, fedAuth)

@@ -3,6 +3,8 @@ package mssql
 import (
 	"context"
 	"errors"
+
+	"github.com/denisenkom/go-mssqldb/msdsn"
 )
 
 // Federated authentication library affects the login data structure and message sequence.
@@ -39,16 +41,14 @@ const (
 // service specified and obtain the appropriate token, or return an error
 // to indicate why a token is not available.
 // The returned connector may be used with sql.OpenDB.
-func newSecurityTokenConnector(dsn string, tokenProvider func(ctx context.Context) (string, error)) (*Connector, error) {
+func newSecurityTokenConnectorConfig(config msdsn.Config, tokenProvider func(ctx context.Context) (string, error)) (*Connector, error) {
 	if tokenProvider == nil {
 		return nil, errors.New("mssql: tokenProvider cannot be nil")
 	}
 
-	conn, err := NewConnector(dsn)
-	if err != nil {
-		return nil, err
-	}
+	conn := NewConnectorConfig(config)
 
+	conn.fedAuthRequired = true
 	conn.fedAuthLibrary = fedAuthLibrarySecurityToken
 	conn.securityTokenProvider = tokenProvider
 
@@ -64,16 +64,14 @@ func newSecurityTokenConnector(dsn string, tokenProvider func(ctx context.Contex
 // to indicate why a token is not available.
 //
 // The returned connector may be used with sql.OpenDB.
-func newActiveDirectoryTokenConnector(dsn string, adalWorkflow byte, tokenProvider func(ctx context.Context, serverSPN, stsURL string) (string, error)) (*Connector, error) {
+func newActiveDirectoryTokenConnectorConfig(config msdsn.Config, adalWorkflow byte, tokenProvider func(ctx context.Context, serverSPN, stsURL string) (string, error)) (*Connector, error) {
 	if tokenProvider == nil {
 		return nil, errors.New("mssql: tokenProvider cannot be nil")
 	}
 
-	conn, err := NewConnector(dsn)
-	if err != nil {
-		return nil, err
-	}
+	conn := NewConnectorConfig(config)
 
+	conn.fedAuthRequired = true
 	conn.fedAuthLibrary = fedAuthLibraryADAL
 	conn.fedAuthADALWorkflow = adalWorkflow
 	conn.adalTokenProvider = tokenProvider
